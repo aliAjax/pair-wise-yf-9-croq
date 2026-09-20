@@ -369,6 +369,256 @@ label {
   flex: 1;
 }
 
+/* ========== 聚会试玩清单 ========== */
+.party-panel {
+  margin-bottom: 16px;
+}
+
+.party-panel .panel-head {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.party-panel .panel-head h2 {
+  margin-bottom: 4px;
+}
+
+.party-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 560px;
+}
+
+.party-settings {
+  display: grid;
+  grid-template-columns: 120px 180px;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.slot {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.slot-main {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 1px rgba(49, 95, 134, 0.25);
+}
+
+.slot-side {
+  border-style: dashed;
+}
+
+.slot-empty {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.slot-empty .empty {
+  margin: 0;
+}
+
+.slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slot-tag {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--lavender);
+}
+
+.slot-main .slot-tag {
+  color: var(--blue);
+}
+
+.slot-clear {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.slot-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slot-role {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.party-total {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.party-total strong {
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.party-total.bad,
+.pill.bad {
+  color: var(--red);
+}
+
+.pill.bad {
+  background: rgba(179, 72, 72, 0.1);
+}
+
+.party-notice {
+  min-height: 0;
+  margin: 10px 0 0;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.party-notice:not(:empty) {
+  padding: 9px 11px;
+  margin-top: 10px;
+}
+
+.party-notice.error {
+  background: rgba(179, 72, 72, 0.12);
+  border: 1px solid rgba(179, 72, 72, 0.4);
+  color: var(--red);
+}
+
+.party-notice.success {
+  background: rgba(57, 116, 91, 0.12);
+  border: 1px solid rgba(57, 116, 91, 0.4);
+  color: var(--green);
+}
+
+.party-reminders {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.reminder {
+  border-radius: 6px;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.reminder.missing {
+  background: rgba(179, 72, 72, 0.08);
+  border-color: rgba(179, 72, 72, 0.35);
+  color: var(--red);
+}
+
+.reminder.warn {
+  background: rgba(213, 162, 61, 0.12);
+  border-color: rgba(213, 162, 61, 0.45);
+  color: #8a6420;
+}
+
+.reminder.info {
+  background: rgba(49, 95, 134, 0.08);
+  border-color: rgba(49, 95, 134, 0.3);
+  color: var(--blue);
+}
+
+.reminder.ok {
+  background: rgba(57, 116, 91, 0.1);
+  border-color: rgba(57, 116, 91, 0.35);
+  color: var(--green);
+}
+
+.party-pickers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.picker h3 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.picker h3 span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.candidate-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.candidate {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 9px 11px;
+  background: #fff;
+}
+
+.candidate:hover {
+  border-color: var(--blue);
+}
+
+.candidate.picked {
+  border-color: var(--green);
+  background: rgba(57, 116, 91, 0.06);
+}
+
+.candidate.invalid {
+  opacity: 0.6;
+}
+
+.candidate-name {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pick-flag {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.pick-flag.warn {
+  color: var(--red);
+}
+
 @media (max-width: 1160px) {
   .topbar {
     align-items: stretch;
@@ -382,6 +632,15 @@ label {
 
   .detail-panel {
     position: static;
+  }
+
+  .party-panel .panel-head {
+    flex-direction: column;
+  }
+
+  .slots-grid,
+  .party-pickers {
+    grid-template-columns: 1fr;
   }
 }
 

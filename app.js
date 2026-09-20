@@ -3,6 +3,7 @@ const today = new Date();
 
 const defaultState = {
   selectedId: "",
+  party: { players: 4, window: 180, mainId: "", sideIds: [] },
   games: [
     {
       id: crypto.randomUUID(),
@@ -70,14 +71,33 @@ const els = {
   gameCount: document.querySelector("#gameCount"),
   ruleCount: document.querySelector("#ruleCount"),
   staleGame: document.querySelector("#staleGame"),
-  visibleCount: document.querySelector("#visibleCount")
+  visibleCount: document.querySelector("#visibleCount"),
+  partyPlayers: document.querySelector("#partyPlayers"),
+  partyWindow: document.querySelector("#partyWindow"),
+  partySlots: document.querySelector("#partySlots"),
+  partyReminders: document.querySelector("#partyReminders"),
+  mainCandidates: document.querySelector("#mainCandidates"),
+  sideCandidates: document.querySelector("#sideCandidates"),
+  partyNotice: document.querySelector("#partyNotice")
 };
 
 function loadState() {
   const saved = localStorage.getItem(storageKey);
   if (!saved) return structuredClone(defaultState);
   try {
-    return { ...structuredClone(defaultState), ...JSON.parse(saved) };
+    const merged = { ...structuredClone(defaultState), ...JSON.parse(saved) };
+    const defaultParty = structuredClone(defaultState.party);
+    const savedParty = typeof merged.party === "object" && merged.party ? merged.party : {};
+    merged.party = {
+      players: Number(savedParty.players) > 0 ? Number(savedParty.players) : defaultParty.players,
+      window: Number(savedParty.window) > 0 ? Number(savedParty.window) : defaultParty.window,
+      mainId: typeof savedParty.mainId === "string" ? savedParty.mainId : "",
+      sideIds: Array.isArray(savedParty.sideIds) ? savedParty.sideIds.filter((id) => typeof id === "string") : []
+    };
+    const gameIds = new Set(merged.games.map((game) => game.id));
+    if (!gameIds.has(merged.party.mainId)) merged.party.mainId = "";
+    merged.party.sideIds = merged.party.sideIds.filter((id) => id !== merged.party.mainId && gameIds.has(id));
+    return merged;
   } catch {
     return structuredClone(defaultState);
   }
@@ -220,11 +240,279 @@ function renderRuleSection(title, key, items) {
   `;
 }
 
+function sortByStale(games) {
+  return [...games].sort((a, b) => daysSince(b.lastPlayed) - daysSince(a.lastPlayed));
+}
+
+// ========== 聚会试玩清单 ==========
+let partyNotice = null;
+
+function getById(id) {
+  return state.games.find((game) => game.id === id);
+}
+
+function coversPlayers(game, players) {
+  return players >= game.minPlayers && players <= game.maxPlayers;
+}
+
+function findDuplicate(ids) {
+  const seen = new Set();
+  for (const id of ids) {
+    if (seen.has(id)) return id;
+    seen.add(id);
+  }
+  return null;
+}
+
+// 统一复核：主游戏必须存在且覆盖人数；三款合计时长不超窗口；副游戏最多两款、不与主游戏或彼此重复
+function validateParty(party) {
+  if (!party.mainId) return { ok: true };
+  const main = getById(party.mainId);
+  if (!main) return { ok: false, reason: "主游戏不在收藏中。" };
+  if (!coversPlayers(main, party.players)) {
+    return { ok: false, reason: `主游戏《${main.name}》不支持 ${party.players} 人（${main.minPlayers}-${main.maxPlayers}人）。` };
+  }
+  if (party.sideIds.length > 2) return { ok: false, reason: "副游戏最多只能选两款。" };
+  const duplicate = findDuplicate([party.mainId, ...party.sideIds]);
+  if (duplicate) {
+    const dup = getById(duplicate);
+    return { ok: false, reason: `《${dup ? dup.name : "该游戏"}》在清单中重复。` };
+  }
+  const sides = party.sideIds.map(getById);
+  if (sides.some((game) => !game)) return { ok: false, reason: "副游戏不在收藏中。" };
+  const total = main.duration + sides.reduce((sum, game) => sum + game.duration, 0);
+  if (total > party.window) {
+    return { ok: false, reason: `合计时长 ${total} 分钟，超过今晚窗口 ${party.window} 分钟。` };
+  }
+  return { ok: true, main, sides, total };
+}
+
+// 任一条件不满足就整次拒绝：临时副本校验失败时不写入 state，清单与收藏均保持不变
+function commitParty(nextParty) {
+  const result = validateParty(nextParty);
+  if (!result.ok) {
+    partyNotice = { type: "error", text: `已拒绝：${result.reason}` };
+    renderParty();
+    return false;
+  }
+  state.party = nextParty;
+  if (result.total !== undefined) {
+    partyNotice = { type: "success", text: `清单已更新：合计 ${result.total} / ${nextParty.window} 分钟。` };
+  } else if (!nextParty.mainId) {
+    partyNotice = { type: "success", text: "清单已清空，收藏保持不变。" };
+  }
+  renderAll();
+  return true;
+}
+
+function renderPartyGame(game, role) {
+  return `
+    <div class="slot-name">
+      <strong>${escapeHtml(game.name)}</strong>
+      <span class="slot-role">${role}</span>
+    </div>
+    <div class="game-meta">
+      <span class="pill ${coversPlayers(game, state.party.players) ? "" : "bad"}">
+        ${game.minPlayers}-${game.maxPlayers}人
+      </span>
+      <span class="pill">${game.duration}分钟</span>
+      <span class="pill">${daysSince(game.lastPlayed)}天未玩</span>
+    </div>
+  `;
+}
+
+function renderPartySlots() {
+  const { mainId, sideIds, window: windowMin } = state.party;
+  const main = getById(mainId);
+  const sides = sideIds.map(getById).filter(Boolean);
+  const total = main ? main.duration + sides.reduce((sum, game) => sum + game.duration, 0) : 0;
+  const over = total > windowMin;
+
+  const mainSlot = main
+    ? `
+      <div class="slot slot-main">
+        <div class="slot-head">
+          <span class="slot-tag">主游戏</span>
+          <button type="button" class="slot-clear" data-party-action="clearMain" title="清空清单">清空</button>
+        </div>
+        ${renderPartyGame(main, "必须覆盖今晚人数")}
+      </div>
+    `
+    : `
+      <div class="slot slot-empty">
+        <div class="slot-head"><span class="slot-tag">主游戏</span></div>
+        <p class="empty">尚未选择主游戏，请从下方最近未玩排序的候选中点一个。</p>
+      </div>
+    `;
+
+  const sideSlots = [0, 1]
+    .map((index) => {
+      const side = sides[index];
+      if (!side) {
+        return `
+          <div class="slot slot-empty">
+            <div class="slot-head"><span class="slot-tag">副游戏 ${index + 1}</span></div>
+            <p class="empty">空位（最多两款）</p>
+          </div>
+        `;
+      }
+      return `
+        <div class="slot slot-side">
+          <div class="slot-head">
+            <span class="slot-tag">副游戏 ${index + 1}</span>
+            <button type="button" class="slot-clear" data-party-action="removeSide" data-side-id="${side.id}">移除</button>
+          </div>
+          ${renderPartyGame(side, coversPlayers(side, state.party.players) ? "可选暖场" : "人数不足，见下方提醒")}
+        </div>
+      `;
+    })
+    .join("");
+
+  els.partySlots.innerHTML = `
+    <div class="slots-grid">
+      ${mainSlot}
+      ${sideSlots}
+    </div>
+    <p class="party-total ${over ? "bad" : ""}">
+      三款合计 <strong>${total}</strong> / ${windowMin} 分钟${over ? "（超出窗口）" : ""}
+    </p>
+  `;
+}
+
+function renderMainCandidates() {
+  const { players, mainId } = state.party;
+  els.mainCandidates.innerHTML = sortByStale(state.games)
+    .map((game) => {
+      const cover = coversPlayers(game, players);
+      return `
+        <button type="button" class="candidate ${mainId === game.id ? "picked" : ""}" data-main-id="${game.id}">
+          <span class="candidate-name">${escapeHtml(game.name)}</span>
+          <span class="game-meta">
+            <span class="pill ${cover ? "" : "bad"}">${game.minPlayers}-${game.maxPlayers}人</span>
+            <span class="pill">${game.duration}分钟</span>
+            <span class="pill">${daysSince(game.lastPlayed)}天未玩</span>
+          </span>
+          ${mainId === game.id ? `<span class="pick-flag">当前主游戏</span>` : ""}
+          ${!cover ? `<span class="pick-flag warn">不支持${players}人，点击将被拒绝</span>` : ""}
+        </button>
+      `;
+    })
+    .join("") || `<p class="empty">收藏为空，先在左侧添加桌游。</p>`;
+}
+
+function renderSideCandidates() {
+  const { players, window: windowMin, mainId, sideIds } = state.party;
+  const main = getById(mainId);
+  if (!main) {
+    els.sideCandidates.innerHTML = `<p class="empty">先确定主游戏，再挑选副游戏。</p>`;
+    return;
+  }
+  const usedTotal = main.duration + sideIds.reduce((sum, id) => sum + (getById(id)?.duration || 0), 0);
+  const candidates = sortByStale(state.games).filter((game) => game.id !== mainId);
+  els.sideCandidates.innerHTML = candidates
+    .map((game) => {
+      const picked = sideIds.includes(game.id);
+      const fitsTime = usedTotal + game.duration <= windowMin;
+      const cover = coversPlayers(game, players);
+      const disabledReason = !fitsTime
+        ? "超出剩余时间，点击将被拒绝"
+        : sideIds.length >= 2 && !picked
+          ? "副游戏已满两款"
+          : "";
+      return `
+        <button type="button" class="candidate ${picked ? "picked" : ""} ${disabledReason ? "invalid" : ""}" data-side-id="${game.id}">
+          <span class="candidate-name">${escapeHtml(game.name)}</span>
+          <span class="game-meta">
+            <span class="pill ${cover ? "" : "bad"}">${game.minPlayers}-${game.maxPlayers}人</span>
+            <span class="pill ${fitsTime ? "" : "bad"}">${game.duration}分钟</span>
+            <span class="pill">${daysSince(game.lastPlayed)}天未玩</span>
+          </span>
+          ${picked ? `<span class="pick-flag">已在清单</span>` : ""}
+          ${!picked && !cover ? `<span class="pick-flag warn">不支持${players}人，规则只要求主游戏覆盖人数</span>` : ""}
+          ${disabledReason ? `<span class="pick-flag warn">${disabledReason}</span>` : ""}
+        </button>
+      `;
+    })
+    .join("") || `<p class="empty">收藏里除主游戏外没有其他桌游。</p>`;
+}
+
+// 缺失提醒：人数没有任何收藏可覆盖、时间窗放不下主游戏或副游戏等
+function buildPartyReminders() {
+  const { players, window: windowMin, mainId, sideIds } = state.party;
+  const reminders = [];
+  if (!state.games.length) {
+    reminders.push({ type: "missing", text: "收藏为空，无法生成试玩清单。" });
+    return reminders;
+  }
+  if (!mainId) {
+    const playable = state.games.filter((game) => coversPlayers(game, players));
+    if (!playable.length) {
+      reminders.push({ type: "missing", text: `缺失：没有任何收藏支持 ${players} 人，请调整人数或添加新桌游。` });
+    } else {
+      reminders.push({ type: "warn", text: "还缺主游戏；下方候选已按最近未玩排序。" });
+    }
+    return reminders;
+  }
+  const main = getById(mainId);
+  if (!main) return reminders;
+  if (!coversPlayers(main, players)) {
+    reminders.push({ type: "missing", text: `缺失：主游戏《${main.name}》不支持 ${players} 人，请换人或换主游戏。` });
+  }
+  const sides = sideIds.map(getById).filter(Boolean);
+  const total = main.duration + sides.reduce((sum, game) => sum + game.duration, 0);
+  if (total > windowMin) {
+    reminders.push({ type: "missing", text: `缺失：合计 ${total} 分钟超出窗口 ${windowMin} 分钟，请移除副游戏或加时。` });
+  } else {
+    const remaining = windowMin - total;
+    const filler = state.games.find(
+      (game) =>
+        game.id !== mainId &&
+        !sideIds.includes(game.id) &&
+        game.duration <= remaining
+    );
+    if (sideIds.length < 2 && remaining > 0 && !filler) {
+      reminders.push({ type: "missing", text: `还剩 ${remaining} 分钟，但没有能放进该时段的副游戏。` });
+    } else if (sideIds.length < 2 && filler) {
+      reminders.push({ type: "info", text: `还可加 ${sideIds.length === 0 ? "一到两款" : "一款"}副游戏（剩余 ${remaining} 分钟）。` });
+    }
+  }
+  sides.forEach((game) => {
+    if (!coversPlayers(game, players)) {
+      reminders.push({ type: "warn", text: `提醒：副游戏《${game.name}》只支持 ${game.minPlayers}-${game.maxPlayers} 人，规则未强制副游戏覆盖人数，请自行确认。` });
+    }
+  });
+  return reminders;
+}
+
+function renderPartyReminders() {
+  const reminders = buildPartyReminders();
+  els.partyReminders.innerHTML = reminders.length
+    ? reminders
+        .map(
+          (item) =>
+            `<li class="reminder ${item.type}"><span>${escapeHtml(item.text)}</span></li>`
+        )
+        .join("")
+    : `<li class="reminder ok"><span>清单完整：主游戏覆盖人数，合计时长在窗口内。</span></li>`;
+}
+
+function renderParty() {
+  els.partyPlayers.value = state.party.players;
+  els.partyWindow.value = state.party.window;
+  renderPartySlots();
+  renderMainCandidates();
+  renderSideCandidates();
+  renderPartyReminders();
+  els.partyNotice.className = `party-notice ${partyNotice ? partyNotice.type : ""}`;
+  els.partyNotice.textContent = partyNotice ? partyNotice.text : "";
+}
+
 function renderAll() {
   saveState();
   renderSummary();
   renderList();
   renderDetail();
+  renderParty();
 }
 
 function readFileAsDataUrl(file) {
@@ -328,8 +616,63 @@ els.detailView.addEventListener("click", (event) => {
   if (deleteButton) {
     state.games = state.games.filter((item) => item.id !== game.id);
     state.selectedId = state.games[0]?.id || "";
+    // 删除的桌游若在今晚清单中，同步移除，保持清单可复核
+    if (state.party.mainId === game.id) state.party.mainId = "";
+    state.party.sideIds = state.party.sideIds.filter((id) => id !== game.id);
+    partyNotice = null;
     renderAll();
   }
+});
+
+// ========== 聚会清单交互 ==========
+els.partyPlayers.addEventListener("change", () => {
+  const players = Number(els.partyPlayers.value);
+  if (!Number.isInteger(players) || players < 1) {
+    partyNotice = { type: "error", text: "已拒绝：人数必须是不小于 1 的整数。" };
+    renderParty();
+    return;
+  }
+  commitParty({ ...state.party, players });
+});
+
+els.partyWindow.addEventListener("change", () => {
+  const window = Number(els.partyWindow.value);
+  if (!Number.isInteger(window) || window < 5) {
+    partyNotice = { type: "error", text: "已拒绝：今晚时长至少为 5 分钟。" };
+    renderParty();
+    return;
+  }
+  commitParty({ ...state.party, window });
+});
+
+els.partySlots.addEventListener("click", (event) => {
+  const actionEl = event.target.closest("[data-party-action]");
+  if (!actionEl) return;
+  if (actionEl.dataset.partyAction === "clearMain") {
+    commitParty({ ...state.party, mainId: "", sideIds: [] });
+  }
+  if (actionEl.dataset.partyAction === "removeSide") {
+    const id = actionEl.dataset.sideId;
+    commitParty({ ...state.party, sideIds: state.party.sideIds.filter((sideId) => sideId !== id) });
+  }
+});
+
+els.mainCandidates.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-main-id]");
+  if (!button) return;
+  const id = button.dataset.mainId;
+  if (id === state.party.mainId) return;
+  // 切换主游戏：先在临时副本上释放旧副游戏，再统一复核；失败则旧主游戏和旧副游戏都保留
+  commitParty({ ...state.party, mainId: id, sideIds: [] });
+});
+
+els.sideCandidates.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-side-id]");
+  if (!button) return;
+  const id = button.dataset.sideId;
+  if (id === state.party.mainId || state.party.sideIds.includes(id)) return;
+  // 统一复核：重复、超过两款或合计超时都会被整体拒绝
+  commitParty({ ...state.party, sideIds: [...state.party.sideIds, id] });
 });
 
 setDefaultDate();

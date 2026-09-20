@@ -63,6 +63,41 @@
         </label>
       </section>
 
+      <section class="panel party-panel">
+        <div class="panel-head">
+          <div>
+            <h2>聚会试玩清单</h2>
+            <p class="party-sub">按今晚实际人数和时长，选一款主游戏加最多两款副游戏；条件不满足会整次拒绝，清单与收藏不变。</p>
+          </div>
+          <div class="party-settings">
+            <label>
+              实际人数
+              <input id="partyPlayers" type="number" min="1" max="12" value="4" />
+            </label>
+            <label>
+              今晚时长（分钟）
+              <input id="partyWindow" type="number" min="5" step="5" value="180" />
+            </label>
+          </div>
+        </div>
+
+        <div id="partySlots" class="party-slots"></div>
+        <p id="partyNotice" class="party-notice" role="status"></p>
+
+        <ul id="partyReminders" class="party-reminders"></ul>
+
+        <div class="party-pickers">
+          <section class="picker">
+            <h3>主游戏候选<span>必须覆盖今晚人数 · 按最近未玩排序</span></h3>
+            <div id="mainCandidates" class="candidate-list"></div>
+          </section>
+          <section class="picker">
+            <h3>副游戏候选<span>最多两款、不可与主游戏重复、合计不超时 · 按最近未玩排序</span></h3>
+            <div id="sideCandidates" class="candidate-list"></div>
+          </section>
+        </div>
+      </section>
+
       <section class="layout">
         <aside class="panel">
           <h2>新增桌游</h2>
