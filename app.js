@@ -3,6 +3,12 @@ const today = new Date();
 
 const defaultState = {
   selectedId: "",
+  party: {
+    players: 4,
+    window: 180,
+    mainId: "",
+    sideIds: []
+  },
   games: [
     {
       id: crypto.randomUUID(),
@@ -51,6 +57,7 @@ const defaultState = {
 
 let state = loadState();
 if (!state.selectedId) state.selectedId = state.games[0]?.id || "";
+state.party = normalizeParty(state.party, state.games);
 
 const els = {
   searchInput: document.querySelector("#searchInput"),
@@ -70,7 +77,15 @@ const els = {
   gameCount: document.querySelector("#gameCount"),
   ruleCount: document.querySelector("#ruleCount"),
   staleGame: document.querySelector("#staleGame"),
-  visibleCount: document.querySelector("#visibleCount")
+  visibleCount: document.querySelector("#visibleCount"),
+  partyPlayers: document.querySelector("#partyPlayers"),
+  partyWindow: document.querySelector("#partyWindow"),
+  partyMain: document.querySelector("#partyMain"),
+  partySide1: document.querySelector("#partySide1"),
+  partySide2: document.querySelector("#partySide2"),
+  partyClearBtn: document.querySelector("#partyClearBtn"),
+  partyTotal: document.querySelector("#partyTotal"),
+  partyAlert: document.querySelector("#partyAlert")
 };
 
 function loadState() {
@@ -124,6 +139,13 @@ function renderSummary() {
   els.staleGame.textContent = stale ? `${daysSince(stale.lastPlayed)}天` : "-";
 }
 
+function getPartyRole(gameId) {
+  if (state.party.mainId === gameId) return "主游戏";
+  if (state.party.sideIds[0] === gameId) return "副游戏一";
+  if (state.party.sideIds[1] === gameId) return "副游戏二";
+  return "";
+}
+
 function renderList() {
   const games = getFilteredGames();
   els.visibleCount.textContent = `${games.length}个匹配`;
@@ -131,6 +153,7 @@ function renderList() {
     games
       .map((game) => {
         const selected = game.id === state.selectedId ? "selected" : "";
+        const role = getPartyRole(game.id);
         return `
           <article class="game-card ${selected}" data-game-id="${game.id}">
             <div class="cover">
@@ -140,6 +163,7 @@ function renderList() {
                   : `<span>${escapeHtml(game.name.slice(0, 2))}</span>`
               }
               <span class="stale-ribbon">${daysSince(game.lastPlayed)}天未玩</span>
+              ${role ? `<span class="party-ribbon">${role}</span>` : ""}
             </div>
             <div class="game-body">
               <h3>${escapeHtml(game.name)}</h3>
@@ -174,6 +198,7 @@ function renderDetail() {
           <span class="pill">${game.duration}分钟</span>
           <span class="pill heavy">${escapeHtml(game.complexity)}</span>
           <span class="pill">${daysSince(game.lastPlayed)}天未玩</span>
+          ${getPartyRole(game.id) ? `<span class="pill role">今晚${getPartyRole(game.id)}</span>` : ""}
         </div>
       </div>
       ${renderRuleSection("容易忘的规则", "forgets", game.forgets)}
@@ -220,11 +245,201 @@ function renderRuleSection(title, key, items) {
   `;
 }
 
-function renderAll() {
+function renderAll(partyAlerts = []) {
   saveState();
   renderSummary();
   renderList();
   renderDetail();
+  renderParty(partyAlerts);
+}
+
+function normalizeParty(party, games) {
+  const base = { ...structuredClone(defaultState.party) };
+  party = { ...base, ...(party || {}) };
+  const ids = new Set(games.map((game) => game.id));
+  if (party.mainId && !ids.has(party.mainId)) party.mainId = "";
+  const rawSides = Array.isArray(party.sideIds) ? party.sideIds : [];
+  const seen = new Set();
+  party.sideIds = [0, 1].map((index) => {
+    const id = rawSides[index];
+    if (!id || !ids.has(id) || id === party.mainId || seen.has(id)) return "";
+    seen.add(id);
+    return id;
+  });
+  return party;
+}
+
+function getGameById(id) {
+  return state.games.find((game) => game.id === id) || null;
+}
+
+function supportsPlayers(game, players) {
+  return players >= game.minPlayers && players <= game.maxPlayers;
+}
+
+function gamesByStaleness() {
+  return [...state.games].sort(
+    (a, b) => daysSince(b.lastPlayed) - daysSince(a.lastPlayed) || a.name.localeCompare(b.name, "zh-CN")
+  );
+}
+
+// 统一复核：人数有效、主游戏覆盖人数、副游戏不与主游戏或彼此重复、三款合计不超过窗口
+function validateParty() {
+  const errors = [];
+  const party = state.party;
+  const players = Number(party.players);
+  const windowMinutes = Number(party.window);
+
+  if (!Number.isInteger(players) || players < 1) {
+    errors.push("请输入有效的今晚人数（正整数）。");
+  }
+  if (!Number.isFinite(windowMinutes) || windowMinutes <= 0) {
+    errors.push("请输入有效的今晚时长（大于 0 的分钟数）。");
+  }
+
+  const main = party.mainId ? getGameById(party.mainId) : null;
+  if (party.mainId && !main) {
+    errors.push("主游戏已不在收藏中。");
+  }
+  if (main && Number.isInteger(players) && players >= 1 && !supportsPlayers(main, players)) {
+    errors.push(
+      `主游戏《${main.name}》只支持 ${main.minPlayers}-${main.maxPlayers} 人，覆盖不了今晚 ${players} 人。`
+    );
+  }
+
+  const seenSides = new Set();
+  const sideGames = party.sideIds.map((id, index) => {
+    if (!id) return null;
+    const game = getGameById(id);
+    if (!game) {
+      errors.push(`副游戏${index + 1}已不在收藏中。`);
+      return null;
+    }
+    if (main && id === main.id) {
+      errors.push(`副游戏《${game.name}》与主游戏重复。`);
+    }
+    if (seenSides.has(id)) {
+      errors.push(`副游戏《${game.name}》被重复选择。`);
+    }
+    seenSides.add(id);
+    return game;
+  });
+
+  if (main && Number.isFinite(windowMinutes) && windowMinutes > 0) {
+    const total = main.duration + sideGames.reduce((sum, game) => sum + (game ? game.duration : 0), 0);
+    if (total > windowMinutes) {
+      errors.push(`三款合计 ${total} 分钟，超过今晚 ${windowMinutes} 分钟的时间窗口。`);
+    }
+  }
+
+  return errors;
+}
+
+// 任何修改都先快照，复核失败就整次回滚，清单和收藏保持原样
+function commitPartyChange(mutate) {
+  const snapshot = structuredClone(state.party);
+  mutate();
+  const errors = validateParty();
+  if (errors.length) {
+    state.party = snapshot;
+    renderAll(errors);
+    return;
+  }
+  renderAll();
+}
+
+function gameOption(game) {
+  return `${escapeHtml(game.name)}（${game.minPlayers}-${game.maxPlayers}人 · ${game.duration}分钟 · ${daysSince(game.lastPlayed)}天未玩）`;
+}
+
+function buildMissingReminders(players, windowMinutes, main, sideGames) {
+  const notes = [];
+  if (state.games.length === 0) {
+    notes.push("收藏还是空的，先在左侧添加桌游。");
+    return notes;
+  }
+  if (Number.isInteger(players) && players >= 1) {
+    const covering = state.games.filter((game) => supportsPlayers(game, players));
+    if (covering.length === 0) {
+      notes.push(`收藏中没有支持 ${players} 人的游戏，主游戏无法覆盖今晚人数。`);
+    }
+  }
+  if (!state.party.mainId) {
+    notes.push("还没有选择主游戏：主游戏必须能覆盖今晚人数。");
+  }
+  if (main && Number.isFinite(windowMinutes) && windowMinutes > 0) {
+    const used = main.duration + sideGames.reduce((sum, game) => sum + game.duration, 0);
+    const remaining = windowMinutes - used;
+    const openSlots = state.party.sideIds.filter((id) => !id).length;
+    if (openSlots > 0) {
+      const picked = new Set([main.id, ...sideGames.map((game) => game.id)]);
+      const candidates = state.games.filter((game) => !picked.has(game.id));
+      const shortest = Math.min(...candidates.map((game) => game.duration));
+      if (remaining <= 0) {
+        notes.push("时间窗口已经排满，副游戏位只能留空。");
+      } else if (candidates.length === 0) {
+        notes.push("收藏里已没有其他游戏可作为副游戏。");
+      } else if (shortest > remaining) {
+        notes.push(`仅剩 ${remaining} 分钟，但收藏中最短的候选游戏也要 ${shortest} 分钟，副游戏位只能留空。`);
+      }
+    }
+  }
+  return notes;
+}
+
+function renderParty(alerts = []) {
+  const party = state.party;
+  els.partyPlayers.value = party.players;
+  els.partyWindow.value = party.window;
+
+  const players = Number(party.players);
+  const windowMinutes = Number(party.window);
+  const staleGames = gamesByStaleness();
+
+  els.partyMain.innerHTML =
+    `<option value="">请选择主游戏</option>` +
+    staleGames
+      .map((game) => {
+        const disabled =
+          Number.isInteger(players) && players >= 1 && !supportsPlayers(game, players) ? "disabled" : "";
+        const selected = game.id === party.mainId ? "selected" : "";
+        return `<option value="${game.id}" ${selected} ${disabled}>${gameOption(game)}</option>`;
+      })
+      .join("");
+
+  const main = party.mainId ? getGameById(party.mainId) : null;
+  const sideGames = party.sideIds.map((id) => (id ? getGameById(id) : null));
+
+  [els.partySide1, els.partySide2].forEach((select, slot) => {
+    const currentId = party.sideIds[slot] || "";
+    const otherId = party.sideIds[1 - slot] || "";
+    const options = staleGames
+      .filter((game) => game.id !== party.mainId && game.id !== otherId)
+      .map((game) => {
+        const selected = game.id === currentId ? "selected" : "";
+        return `<option value="${game.id}" ${selected}>${gameOption(game)}</option>`;
+      })
+      .join("");
+    select.innerHTML = `<option value="">不选</option>${options}`;
+  });
+
+  const used = (main ? main.duration : 0) + sideGames.reduce((sum, game) => sum + (game ? game.duration : 0), 0);
+  const validWindow = Number.isFinite(windowMinutes) && windowMinutes > 0;
+  els.partyTotal.textContent = `合计 ${used} / ${validWindow ? windowMinutes : "—"} 分钟`;
+  els.partyTotal.classList.toggle("over", validWindow && used > windowMinutes);
+
+  const notes = alerts.length ? [] : buildMissingReminders(players, windowMinutes, main, sideGames.filter(Boolean));
+  const items = [
+    ...alerts.map((text) => ({ type: "error", text })),
+    ...notes.map((text) => ({ type: "notice", text }))
+  ];
+  els.partyAlert.hidden = items.length === 0;
+  els.partyAlert.innerHTML = items
+    .map(
+      (item) =>
+        `<li class="${item.type}">${item.type === "error" ? "已拒绝：" : "缺失提醒："}${escapeHtml(item.text)}</li>`
+    )
+    .join("");
 }
 
 function readFileAsDataUrl(file) {
@@ -287,6 +502,44 @@ els.complexityFilter.addEventListener("change", renderAll);
 els.sortMode.addEventListener("change", renderAll);
 els.gameForm.addEventListener("submit", addGame);
 
+els.partyPlayers.addEventListener("change", () => {
+  commitPartyChange(() => {
+    state.party.players = Number(els.partyPlayers.value);
+  });
+});
+
+els.partyWindow.addEventListener("change", () => {
+  commitPartyChange(() => {
+    state.party.window = Number(els.partyWindow.value);
+  });
+});
+
+els.partyMain.addEventListener("change", () => {
+  // 切换主游戏时先释放旧副游戏，再统一复核
+  commitPartyChange(() => {
+    state.party.mainId = els.partyMain.value;
+    state.party.sideIds = ["", ""];
+  });
+});
+
+els.partySide1.addEventListener("change", () => {
+  commitPartyChange(() => {
+    state.party.sideIds[0] = els.partySide1.value;
+  });
+});
+
+els.partySide2.addEventListener("change", () => {
+  commitPartyChange(() => {
+    state.party.sideIds[1] = els.partySide2.value;
+  });
+});
+
+els.partyClearBtn.addEventListener("click", () => {
+  state.party.mainId = "";
+  state.party.sideIds = ["", ""];
+  renderAll();
+});
+
 els.gameList.addEventListener("click", (event) => {
   const card = event.target.closest("[data-game-id]");
   if (!card) return;
@@ -327,6 +580,8 @@ els.detailView.addEventListener("click", (event) => {
 
   if (deleteButton) {
     state.games = state.games.filter((item) => item.id !== game.id);
+    if (state.party.mainId === game.id) state.party.mainId = "";
+    state.party.sideIds = state.party.sideIds.map((id) => (id === game.id ? "" : id));
     state.selectedId = state.games[0]?.id || "";
     renderAll();
   }

@@ -63,6 +63,39 @@
         </label>
       </section>
 
+      <section class="panel party-panel">
+        <div class="panel-head">
+          <h2>聚会试玩清单</h2>
+          <span id="partyTotal" class="party-total">合计 0 / 0 分钟</span>
+        </div>
+        <div class="party-grid">
+          <label>
+            今晚实际人数
+            <input id="partyPlayers" type="number" min="1" max="12" value="4" />
+          </label>
+          <label>
+            今晚时长（分钟）
+            <input id="partyWindow" type="number" min="5" step="5" value="180" />
+          </label>
+          <label>
+            主游戏（必须覆盖人数）
+            <select id="partyMain"></select>
+          </label>
+          <label>
+            副游戏一（可选）
+            <select id="partySide1"></select>
+          </label>
+          <label>
+            副游戏二（可选）
+            <select id="partySide2"></select>
+          </label>
+          <div class="party-actions">
+            <button id="partyClearBtn" type="button">清空清单</button>
+          </div>
+        </div>
+        <ul id="partyAlert" class="party-alert" hidden></ul>
+      </section>
+
       <section class="layout">
         <aside class="panel">
           <h2>新增桌游</h2>

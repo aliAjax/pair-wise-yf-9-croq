@@ -178,6 +178,75 @@ label {
   align-items: start;
 }
 
+.party-panel {
+  margin-bottom: 16px;
+}
+
+.party-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.party-actions {
+  display: flex;
+  align-items: end;
+}
+
+.party-actions button {
+  width: 100%;
+}
+
+.party-total {
+  color: var(--green);
+  font-weight: 900;
+}
+
+.party-total.over {
+  color: var(--red);
+}
+
+.party-alert {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.party-alert li {
+  padding-left: 4px;
+}
+
+.party-alert li.error {
+  color: var(--red);
+}
+
+.party-alert li.notice {
+  color: var(--yellow);
+}
+
+.party-ribbon {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  border-radius: 999px;
+  background: rgba(179, 72, 72, 0.92);
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pill.role {
+  background: rgba(179, 72, 72, 0.12);
+  color: var(--red);
+}
+
 .panel {
   padding: 14px;
 }
@@ -377,6 +446,10 @@ label {
 
   .controls,
   .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .party-grid {
     grid-template-columns: 1fr;
   }
 
